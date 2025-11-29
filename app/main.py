@@ -4,6 +4,7 @@ import requests
 import datetime
 import os
 import base64
+import json
 from typing import List, Dict, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -221,7 +222,11 @@ async def openai_materials(
             model="gpt-5.1-chat-latest",
             messages=messages
         )
-        return response.choices[0].message.content
+        s_content = response.choices[0].message.content
+        ls_content = json.loads(s_content)
+
+        CONFIG['materials'] = ls_content
+        return ls_content
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
