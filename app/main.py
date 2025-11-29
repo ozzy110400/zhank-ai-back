@@ -229,32 +229,3 @@ async def openai_materials(
         return ls_content
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/conversation")
-def create_conversation():
-    url = f"{API_BASE}/conversations/?team_id={TEAM_ID}"
-    response = requests.post(url, json={
-        "vendor_id": CONFIG["vendor_id"],
-        "title": f"Breakdown-{datetime.datetime.now()}"
-    })
-
-    CONFIG["conversation_id"] = response.json()["id"]
-
-    return response
-
-
-@app.post("/upload-document/")
-async def upload_document(file: UploadFile = File(...)):
-    url = f"{API_BASE}/documents/{CONFIG['vendor_id']}/upload"
-    files = {'file': (file.filename, await file.read())}
-
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.post(url, files=files)
-            response.raise_for_status()
-            return response.json()
-        except httpx.RequestError as exc:
-            raise HTTPException(status_code=503, detail=f"Error connecting to the document service: {exc}")
-        except httpx.HTTPStatusError as exc:
-            raise HTTPException(status_code=exc.response.status_code, detail=f"Document service returned an error: {exc.response.text}")
