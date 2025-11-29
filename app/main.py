@@ -1,6 +1,7 @@
 import random
 from typing import List, Dict
 from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .models import (
@@ -17,6 +18,15 @@ app = FastAPI(
     title="Office Procurement AI",
     description="An API for automating office procurement using computer vision and optimization.",
     version="1.0.0",
+)
+
+# Add CORS middleware to allow all origins for the Hackathon demo
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allows all methods
+    allow_headers=["*"],  # Allows all headers
 )
 
 
