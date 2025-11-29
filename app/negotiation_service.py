@@ -79,9 +79,31 @@ class NegotiationService:
             return None
 
     def _extract_price_from_text(self, text: str) -> Optional[float]:
-        matches = re.findall(r'\$(\s*\d+\.?\d*)', text)
+        """
+        Uses regex to find a dollar amount in a string.
+        Handles commas (e.g., $2,600.00).
+        """
+        # Look for $ followed by digits, commas, and optional decimals
+        # Pattern explanation:
+        # \$       -> Literal dollar sign
+        # \s* -> Optional whitespace
+        # (        -> Start capture group
+        #  [\d,]+  -> One or more digits or commas
+        #  (?:     -> Non-capturing group for decimals
+        #   \.\d+  -> A dot followed by digits
+        #  )?      -> Decimal part is optional
+        # )        -> End capture group
+        matches = re.findall(r'\$\s*([\d,]+(?:\.\d+)?)', text)
+
         if matches:
-            return float(matches[-1].strip())
+            # Get the last match (usually the final offer)
+            price_str = matches[-1]
+            # Remove commas so float() doesn't crash
+            clean_price = price_str.replace(',', '')
+            try:
+                return float(clean_price)
+            except ValueError:
+                return None
         return None
 
     def start_conversation(self, candidate_name: str) -> Optional[int]:
