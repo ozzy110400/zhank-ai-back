@@ -1,8 +1,7 @@
 import httpx
 import requests
+import datetime
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from .models import ImageAnalysisResponse
-from .services import analyze_image
 
 app = FastAPI()
 API_BASE = "https://negbot-backend-ajdxh9axb0ddb0e9.westeurope-01.azurewebsites.net/api"
@@ -13,6 +12,19 @@ CONFIG = {"vendor_name": "Custom Vendor ZHANK"}
 @app.get("/health")
 def read_root():
     return {"status": "ok"}
+
+
+@app.post("/conversation")
+def create_conversation():
+    url = f"{API_BASE}/conversations/?team_id={TEAM_ID}"
+    response = requests(url, json={
+        "vendor_id": CONFIG["vendor_id"],
+        "title": f"Breakdown-{datetime.datetime.now()}"
+    })
+
+    CONFIG["conversation_id"] = response.json()["id"]
+
+    return response
 
 
 @app.post("/upload-document/")
