@@ -15,15 +15,6 @@ def read_root():
     return {"status": "ok"}
 
 
-@app.post("/upload-image/", response_model=ImageAnalysisResponse)
-async def upload_image(image: UploadFile = File(...)):
-    """
-    Accepts an image file, passes it to a service for analysis,
-    and returns the analysis result.
-    """
-    return await analyze_image(image)
-
-
 @app.post("/upload-document/")
 async def upload_document(file: UploadFile = File(...)):
     url = f"{API_BASE}/documents/{CONFIG['vendor_id']}/upload"
