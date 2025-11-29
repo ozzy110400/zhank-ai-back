@@ -43,3 +43,10 @@ class Solution(BaseModel):
     selections: Dict[str, MarketCandidate]
     total_cost: float
     max_delivery_days: int
+
+
+class FinalReport(BaseModel):
+    original_solution: Solution
+    negotiated_solution: Solution
+    savings_amount: float
+    savings_percentage: float
