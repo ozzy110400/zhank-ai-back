@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 220 60% 2%;
+    --foreground: 0 0% 100%;
+
+    --card: 220 45% 6%;
+    --card-foreground: 0 0% 100%;
+
+    --popover: 220 45% 6%;
+    --popover-foreground: 0 0% 100%;
+
+    --primary: 188 100% 50%;
+    --primary-foreground: 220 60% 2%;
+    
+    --primary-light: 188 100% 60%;
+    --primary-dark: 188 100% 40%;
+
+    --secondary: 220 40% 10%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 220 40% 10%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 188 100% 50%;
+    --accent-foreground: 220 60% 2%;
+    
+    --accent-light: 188 100% 60%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    
+    --warning: 35 95% 55%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 188 100% 50%;
+    --input: 188 100% 50%;
+    --ring: 188 100% 50%;
+
+    --radius: 0.75rem;
+    
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+    --shadow: 0 2px 8px -2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 12px -2px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 8px 24px -4px rgb(0 0 0 / 0.6);
+    --shadow-glow: 0 0 12px rgba(0, 224, 255, 0.3);
+    
+    --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 220 45% 6%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 188 100% 50%;
+    --sidebar-primary-foreground: 220 60% 2%;
+    --sidebar-accent: 220 40% 10%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 188 100% 50%;
+    --sidebar-ring: 188 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', system-ui, sans-serif;
+    font-weight: 600;
+  }
+}
+
+@layer utilities {
+  .shadow-custom {
+    box-shadow: var(--shadow);
+  }
+  
+  .shadow-custom-md {
+    box-shadow: var(--shadow-md);
+  }
+  
+  .shadow-custom-lg {
+    box-shadow: var(--shadow-lg);
+  }
+  
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  .transition-smooth {
+    transition: var(--transition);
+  }
+}
