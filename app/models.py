@@ -23,6 +23,7 @@ class MarketCandidate(BaseModel):
     delivery_days: int
     quality_score: float  # Assuming a score from 0.0 to 1.0
     url: str
+    is_selected: bool = False
 
 
 class UserPreferences(BaseModel):
@@ -51,3 +52,26 @@ class FinalReport(BaseModel):
     savings_amount: float
     savings_percentage: float
     processing_logs: List[str]
+
+
+# --- New Models for Human-in-the-Loop Workflow ---
+
+class NegotiationResponse(BaseModel):
+    text_response: str
+    audio_base64: str
+    conversation_id: int
+    parsed_new_price: Optional[float] = None
+
+
+class RecalculateRequest(BaseModel):
+    detected_items: List[DetectedItem]
+    candidates_map: Dict[str, List[MarketCandidate]]
+    preferences: UserPreferences
+    budget: float
+    fixed_items: Dict[str, str]  # Maps item name (e.g., "Office Chair") to a fixed candidate name
+
+
+class SearchResponse(BaseModel):
+    all_candidates: Dict[str, List[MarketCandidate]]
+    initial_solution: Optional[Solution]
+    logs: List[str]
