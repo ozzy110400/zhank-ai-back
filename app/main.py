@@ -231,11 +231,6 @@ async def openai_materials(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/message")
-def get_ai_message():
-    pass
-
-
 @app.post("/conversation")
 def create_conversation():
     url = f"{API_BASE}/conversations/?team_id={TEAM_ID}"
