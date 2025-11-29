@@ -3,6 +3,18 @@ from typing import Dict, Optional, List
 from math import isclose
 
 
+class Material(BaseModel):
+    name: str
+    price_per_unit: float
+    units: str
+
+
+class Product(BaseModel):
+    name: str
+    materials: list[Material]
+    total_cost: Optional[float]
+
+
 class ImageAnalysisResponse(BaseModel):
     """
     Represents the response from the image analysis service.

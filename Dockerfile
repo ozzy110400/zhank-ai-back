@@ -2,7 +2,7 @@
 FROM python:3.13-slim
 
 # Set the working directory in the container
-WORKDIR /app
+WORKDIR /code
 
 # Copy the dependencies file to the working directory
 COPY requirements.txt .
@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the content of the local app directory to the working directory in the container
-COPY ./app /app
+COPY ./app ./app
 
 # Command to run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
