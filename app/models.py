@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from math import isclose
 
 
@@ -43,3 +43,11 @@ class Solution(BaseModel):
     selections: Dict[str, MarketCandidate]
     total_cost: float
     max_delivery_days: int
+
+
+class FinalReport(BaseModel):
+    original_solution: Solution
+    negotiated_solution: Solution
+    savings_amount: float
+    savings_percentage: float
+    processing_logs: List[str]
