@@ -27,87 +27,111 @@ async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
 
 class ProcurementOptimizer:
     """
-    Handles the logic for finding the best procurement options based on user preferences.
+    Handles the logic for finding the best procurement options based on user preferences,
+    including constraints like a total budget.
     """
 
-    def find_optimal_setup(
+    def find_constrained_optimal_setup(
         self,
         detected_items: list[DetectedItem],
         candidates_map: dict[str, list[MarketCandidate]],
-        preferences: UserPreferences
-    ) -> Solution:
+        preferences: UserPreferences,
+        max_total_budget: float
+    ) -> Solution | None:
         """
-        Finds the optimal set of market candidates for a list of detected items.
+        Finds the optimal set of market candidates that satisfies a budget constraint.
+
+        This method uses a recursive approach to explore all valid combinations of
+        items, scoring each combination based on user preferences and selecting the
+        best one that respects the budget.
 
         Args:
             detected_items: A list of items detected by the CV system.
-            candidates_map: A dictionary mapping item names to a list of available market candidates.
+            candidates_map: A dictionary mapping item names to lists of candidates.
             preferences: The user's preferences for price, delivery, and quality.
+            max_total_budget: The maximum total cost for the entire procurement.
 
         Returns:
-            A Solution object containing the best selection of items.
+            A Solution object for the best valid combination, or None if no
+            combination satisfies the budget.
         """
-        selections: dict[str, MarketCandidate] = {}
-        total_cost = 0.0
-        max_delivery_days = 0
-
+        # --- 1. Pre-computation: Normalize scores for all candidates ---
+        # This is crucial. We normalize within each item category first.
+        # This gives us a fair "attractiveness" score for each individual candidate.
+        normalized_scores: dict[str, dict[str, float]] = {}
         for item in detected_items:
-            candidates = candidates_map.get(item.name)
+            candidates = candidates_map.get(item.name, [])
             if not candidates:
                 continue
 
-            # --- 1. Normalization ---
-            # Extract values for normalization
+            normalized_scores[item.name] = {}
             prices = [c.price for c in candidates]
             delivery_days = [c.delivery_days for c in candidates]
             quality_scores = [c.quality_score for c in candidates]
 
-            # Get min/max for scaling. Add a small epsilon to avoid division by zero if all values are the same.
             min_price, max_price = min(prices), max(prices)
             min_days, max_days = min(delivery_days), max(delivery_days)
             min_quality, max_quality = min(quality_scores), max(quality_scores)
-
             epsilon = 1e-9
 
-            # --- 2. Scoring ---
-            best_candidate = None
-            highest_score = -1.0
+            for c in candidates:
+                norm_price = 1 - ((c.price - min_price) / (max_price - min_price + epsilon))
+                norm_delivery = 1 - ((c.delivery_days - min_days) / (max_days - min_days + epsilon))
+                norm_quality = (c.quality_score - min_quality) / (max_quality - min_quality + epsilon)
 
-            for candidate in candidates:
-                # Normalize cost metrics (lower is better).
-                # A lower price should result in a higher score (closer to 1.0).
-                norm_price = 1 - ((candidate.price - min_price) / (max_price - min_price + epsilon))
-
-                # A shorter delivery time should result in a higher score.
-                norm_delivery = 1 - ((candidate.delivery_days - min_days) / (max_days - min_days + epsilon))
-
-                # Normalize utility metrics (higher is better).
-                # A higher quality score remains high.
-                norm_quality = (candidate.quality_score - min_quality) / (max_quality - min_quality + epsilon)
-
-                # --- 3. Weighting ---
-                # Calculate the final weighted score based on user preferences.
-                # The weights determine the trade-off between cost, speed, and quality.
                 final_score = (
                     (norm_price * preferences.price_weight) +
                     (norm_delivery * preferences.delivery_weight) +
                     (norm_quality * preferences.quality_weight)
                 )
+                normalized_scores[item.name][c.name] = final_score
 
-                if final_score > highest_score:
-                    highest_score = final_score
-                    best_candidate = candidate
+        # --- 2. Recursive Solver ---
+        best_solution = {"score": -1.0, "combination": None}
 
-            if best_candidate:
-                selections[item.name] = best_candidate
-                total_cost += best_candidate.price * item.quantity
-                if best_candidate.delivery_days > max_delivery_days:
-                    max_delivery_days = best_candidate.delivery_days
+        def solve(item_index: int, current_combination: dict[str, MarketCandidate]):
+            # Base case: If we have a candidate for every item, we have a full solution.
+            if item_index == len(detected_items):
+                # Calculate total cost for the current combination
+                total_cost = sum(
+                    c.price * next(item.quantity for item in detected_items if item.name == name)
+                    for name, c in current_combination.items()
+                )
+
+                # Constraint check
+                if total_cost > max_total_budget:
+                    return
+
+                # Score the complete solution by summing the pre-computed scores of its parts.
+                total_score = sum(normalized_scores[name][c.name] for name, c in current_combination.items())
+
+                if total_score > best_solution["score"]:
+                    best_solution["score"] = total_score
+                    best_solution["combination"] = current_combination.copy()
+                return
+
+            # Recursive step: Explore candidates for the current item.
+            current_item = detected_items[item_index]
+            for candidate in candidates_map.get(current_item.name, []):
+                current_combination[current_item.name] = candidate
+                solve(item_index + 1, current_combination)
+                # Backtrack
+                del current_combination[current_item.name]
+
+        solve(0, {})
+
+        # --- 3. Format Output ---
+        if not best_solution["combination"]:
+            return None
+
+        final_selections = best_solution["combination"]
+        total_cost = sum(c.price * next(item.quantity for item in detected_items if item.name == name) for name, c in final_selections.items())
+        max_delivery_days = max(c.delivery_days for c in final_selections.values())
 
         return Solution(
-            selections=selections,
+            selections=final_selections,
             total_cost=total_cost,
-            max_delivery_days=max_delivery_days
+            max_delivery_days=max_delivery_days,
         )
 
 
@@ -133,33 +157,39 @@ if __name__ == "__main__":
 
     optimizer = ProcurementOptimizer()
 
-    # 2. Scenario 1: User prioritizes PRICE
-    price_focused_prefs = UserPreferences(price_weight=0.8, delivery_weight=0.1, quality_weight=0.1)
-    price_solution = optimizer.find_optimal_setup(detected_items_data, market_candidates_data, price_focused_prefs)
+    # --- Scenario: Find the best OVERALL setup with a budget of $6000 ---
+    # This budget is enough for (SpeedyChair, Rapid Desk) but not (QualiChair, Rapid Desk)
+    print("--- Scenario: Balanced Preferences with Budget Constraint ($6000) ---")
+    balanced_prefs = UserPreferences(price_weight=0.4, delivery_weight=0.3, quality_weight=0.3)
+    budget_solution = optimizer.find_constrained_optimal_setup(
+        detected_items_data,
+        market_candidates_data,
+        balanced_prefs,
+        max_total_budget=6000.0
+    )
 
-    print("--- Scenario: Price-Focused (Weight: 80%) ---")
-    print(f"Selected Chair: {price_solution.selections['Office Chair'].name} (Price: ${price_solution.selections['Office Chair'].price})")
-    print(f"Selected Desk: {price_solution.selections['Desk'].name} (Price: ${price_solution.selections['Desk'].price})")
-    print(f"Total Cost: ${price_solution.total_cost:.2f}")
-    print(f"Max Delivery Time: {price_solution.max_delivery_days} days\n")
+    if budget_solution:
+        print(f"Selected Chair: {budget_solution.selections['Office Chair'].name}")
+        print(f"Selected Desk: {budget_solution.selections['Desk'].name}")
+        print(f"Total Cost: ${budget_solution.total_cost:.2f}")
+        print(f"Max Delivery Time: {budget_solution.max_delivery_days} days\n")
+    else:
+        print("No solution found within the given budget.\n")
 
-    # 3. Scenario 2: User prioritizes DELIVERY SPEED
-    delivery_focused_prefs = UserPreferences(price_weight=0.1, delivery_weight=0.8, quality_weight=0.1)
-    delivery_solution = optimizer.find_optimal_setup(detected_items_data, market_candidates_data, delivery_focused_prefs)
+    # --- Scenario: What if the budget is very tight? ---
+    print("--- Scenario: Balanced Preferences with TIGHT Budget Constraint ($3500) ---")
+    tight_budget_solution = optimizer.find_constrained_optimal_setup(
+        detected_items_data,
+        market_candidates_data,
+        balanced_prefs,
+        max_total_budget=3500.0
+    )
 
-    print("--- Scenario: Delivery-Focused (Weight: 80%) ---")
-    print(f"Selected Chair: {delivery_solution.selections['Office Chair'].name} (Delivery: {delivery_solution.selections['Office Chair'].delivery_days} days)")
-    print(f"Selected Desk: {delivery_solution.selections['Desk'].name} (Delivery: {delivery_solution.selections['Desk'].delivery_days} days)")
-    print(f"Total Cost: ${delivery_solution.total_cost:.2f}")
-    print(f"Max Delivery Time: {delivery_solution.max_delivery_days} days\n")
-
-    # 4. Scenario 3: User prioritizes QUALITY
-    quality_focused_prefs = UserPreferences(price_weight=0.1, delivery_weight=0.1, quality_weight=0.8)
-    quality_solution = optimizer.find_optimal_setup(detected_items_data, market_candidates_data, quality_focused_prefs)
-
-    print("--- Scenario: Quality-Focused (Weight: 80%) ---")
-    print(f"Selected Chair: {quality_solution.selections['Office Chair'].name} (Quality: {quality_solution.selections['Office Chair'].quality_score})")
-    print(f"Selected Desk: {quality_solution.selections['Desk'].name} (Quality: {quality_solution.selections['Desk'].quality_score})")
-    print(f"Total Cost: ${quality_solution.total_cost:.2f}")
-    print(f"Max Delivery Time: {quality_solution.max_delivery_days} days\n")
+    if tight_budget_solution:
+        print(f"Selected Chair: {tight_budget_solution.selections['Office Chair'].name}")
+        print(f"Selected Desk: {tight_budget_solution.selections['Desk'].name}")
+        print(f"Total Cost: ${tight_budget_solution.total_cost:.2f}")
+        print(f"Max Delivery Time: {tight_budget_solution.max_delivery_days} days\n")
+    else:
+        print("No solution found within the given budget.\n")
 
