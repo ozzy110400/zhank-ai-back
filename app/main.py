@@ -1,29 +1,24 @@
 import random
-import httpx
-import requests
-import datetime
-import os
-import base64
-import json
-from typing import List, Dict, Optional
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from typing import List, Dict
+
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from openai import OpenAI
+from dotenv import load_dotenv
+
 from .models import (
     ImageAnalysisResponse,
     DetectedItem,
     MarketCandidate,
     UserPreferences,
-    Solution,
     SearchResponse,
     NegotiationResponse,
     RecalculateRequest,
 )
 from .services import ProcurementOptimizer, analyze_image
 from .negotiation_service import NegotiationService
-from dotenv import load_dotenv
 
+# Load env variables (OPENAI_API_KEY)
 load_dotenv()
 
 app = FastAPI(
@@ -40,43 +35,70 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 # --- Request Models for new endpoints ---
 class SearchRequest(BaseModel):
     detected_items: List[DetectedItem]
     preferences: UserPreferences
     budget: float
 
+
 class NegotiationStartRequest(BaseModel):
     candidate_name: str
+
 
 class NegotiationMessageRequest(BaseModel):
     conversation_id: int
     message_content: str
 
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-app = FastAPI()
-API_BASE = "https://negbot-backend-ajdxh9axb0ddb0e9.westeurope-01.azurewebsites.net/api"
-TEAM_ID = 641754
-CONFIG = {"vendor_name": "Custom Vendor ZHANK"}
-
-
 # --- Helper for Mock Data ---
 def generate_mock_candidates(items: List[DetectedItem]) -> Dict[str, List[MarketCandidate]]:
-    # (Same implementation as before)
+    # Mock Scraper logic
     candidates_map: Dict[str, List[MarketCandidate]] = {}
     for item in items:
         base_name = item.name.replace(" ", "")
         candidates_map[item.name] = [
-            MarketCandidate(name=f"Budget {base_name}", price=round(random.uniform(80.0, 150.0), 2), delivery_days=random.randint(10, 20), quality_score=round(random.uniform(0.4, 0.6), 2), url=f"http://example.com/budget-{base_name.lower()}"),
-            MarketCandidate(name=f"Standard {base_name}", price=round(random.uniform(200.0, 350.0), 2), delivery_days=random.randint(5, 9), quality_score=round(random.uniform(0.65, 0.8), 2), url=f"http://example.com/standard-{base_name.lower()}"),
-            MarketCandidate(name=f"Premium {base_name} Pro", price=round(random.uniform(400.0, 600.0), 2), delivery_days=random.randint(1, 4), quality_score=round(random.uniform(0.85, 0.98), 2), url=f"http://example.com/premium-{base_name.lower()}"),
+            MarketCandidate(
+                name=f"Budget {base_name}",
+                price=round(random.uniform(80.0, 150.0), 2),
+                delivery_days=random.randint(10, 20),
+                quality_score=round(random.uniform(0.4, 0.6), 2),
+                url=f"http://example.com/budget-{base_name.lower()}",
+            ),
+            MarketCandidate(
+                name=f"Standard {base_name}",
+                price=round(random.uniform(200.0, 350.0), 2),
+                delivery_days=random.randint(5, 9),
+                quality_score=round(random.uniform(0.65, 0.8), 2),
+                url=f"http://example.com/standard-{base_name.lower()}",
+            ),
+            MarketCandidate(
+                name=f"Premium {base_name} Pro",
+                price=round(random.uniform(400.0, 600.0), 2),
+                delivery_days=random.randint(1, 4),
+                quality_score=round(random.uniform(0.85, 0.98), 2),
+                url=f"http://example.com/premium-{base_name.lower()}",
+            ),
         ]
     return candidates_map
 
 
-# --- API Endpoints for Human-in-the-Loop Workflow ---
+# --- API Endpoints ---
+
+@app.post("/upload-image/", response_model=ImageAnalysisResponse)
+async def upload_image(image: UploadFile = File(...)):
+    """
+    Accepts an image file, sends it to OpenAI GPT-4o for analysis,
+    and returns a structured list of detected items (name, quantity, material).
+    """
+    if not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="Unsupported file type. Please upload an image.")
+
+    # Call the real OpenAI service
+    analysis_result = await analyze_image(image)
+    return analysis_result
+
 
 @app.post("/procure/search", response_model=SearchResponse)
 async def search_procurement_options(request: SearchRequest):
@@ -117,6 +139,7 @@ async def search_procurement_options(request: SearchRequest):
         logs=logs,
     )
 
+
 @app.post("/negotiate/start", response_model=Dict[str, int])
 async def start_negotiation(request: NegotiationStartRequest):
     """
@@ -146,6 +169,7 @@ async def message_negotiation(request: NegotiationMessageRequest):
         conversation_id=request.conversation_id,
         parsed_new_price=parsed_price,
     )
+
 
 @app.post("/procure/recalculate", response_model=SearchResponse)
 async def recalculate_procurement(request: RecalculateRequest):
@@ -185,47 +209,3 @@ async def recalculate_procurement(request: RecalculateRequest):
         initial_solution=new_solution,
         logs=logs,
     )
-@app.post("/openai/materials")
-async def openai_materials(
-    user_message: str = Form(...),
-    file: Optional[UploadFile] = File(None)
-):
-    """
-    Analyzes an image to identify materials and returns a JSON list.
-    """
-    system_message = {
-        "role": "system",
-        "content": "You are an expert in material identification. Based on the user's request and the provided image, identify the materials needed. Your response must be a JSON string list in the format: [{'name': 'Material Name', 'quantity': float}]"
-    }
-
-    messages = [system_message]
-
-    if file:
-        # Check for allowed content types
-        if file.content_type not in ["image/jpeg", "image/png", "application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]:
-            raise HTTPException(status_code=400, detail="Invalid file type. Please upload a JPEG, PNG, PDF, or Excel file.")
-
-        # Encode the image
-        base64_image = base64.b64encode(await file.read()).decode('utf-8')
-        messages.append({
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user_message},
-                {"type": "image_url", "image_url": {"url": f"data:{file.content_type};base64,{base64_image}"}}
-            ]
-        })
-    else:
-        messages.append({"role": "user", "content": user_message})
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-5.1-chat-latest",
-            messages=messages
-        )
-        s_content = response.choices[0].message.content
-        ls_content = json.loads(s_content)
-
-        CONFIG['materials'] = ls_content
-        return ls_content
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

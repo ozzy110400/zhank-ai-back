@@ -1,6 +1,12 @@
-import asyncio
-from typing import List, Dict, Optional  # <--- ADDED THIS
-from fastapi import UploadFile
+import base64
+import json
+import os
+from typing import List, Dict, Optional
+
+from fastapi import UploadFile, HTTPException
+from openai import OpenAI
+from dotenv import load_dotenv
+
 from .models import (
     ImageAnalysisResponse,
     DetectedItem,
@@ -9,17 +15,89 @@ from .models import (
     Solution,
 )
 
+# Load env to get OPENAI_API_KEY
+load_dotenv()
+
+# Initialize OpenAI Client (automatically looks for OPENAI_API_KEY in env)
+client = OpenAI()
+
 
 async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
     """
-    Placeholder for a service that analyzes an image and returns a description and tags.
+    Analyzes an uploaded image using OpenAI GPT-4o to identify office items.
+    Returns structured data matching the DetectedItem model.
     """
-    # Simulate a delay for a long-running process
-    await asyncio.sleep(2)
-    return ImageAnalysisResponse(
-        description=f"A mock analysis of the image '{image.filename}'.",
-        tags=["mock", "analysis", "placeholder"]
+    # 1. Validate File Type
+    if image.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid image type. Please upload JPEG, PNG, or WebP."
+        )
+
+    # 2. Encode Image to Base64
+    file_content = await image.read()
+    base64_image = base64.b64encode(file_content).decode('utf-8')
+
+    # 3. Construct the Prompt
+    system_prompt = (
+        "You are an expert procurement assistant. Analyze the image and identify the furniture or office equipment present. "
+        "Return a JSON object with a single key 'items' containing a list of items. "
+        "Each item must have: "
+        "'name' (string, generic name like 'Office Chair'), "
+        "'quantity' (integer), "
+        "and 'target_material' (string, inferred material like 'Mesh', 'Wood', 'Plastic' or null). "
+        "Also provide a short 'description' of the scene and a list of 'tags'."
     )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "What items do we need to buy based on this image?"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{image.content_type};base64,{base64_image}"
+                            },
+                        },
+                    ],
+                },
+            ],
+            response_format={"type": "json_object"},  # Ensures valid JSON
+        )
+
+        # 4. Parse Response
+        content = response.choices[0].message.content
+        data = json.loads(content)
+
+        # Extract data safely
+        items_data = data.get("items", [])
+        description = data.get("description", "Image analysis complete.")
+        tags = data.get("tags", [])
+
+        # Convert to Pydantic models
+        detected_items = [
+            DetectedItem(
+                name=item["name"],
+                quantity=item["quantity"],
+                target_material=item.get("target_material")
+            )
+            for item in items_data
+        ]
+
+        return ImageAnalysisResponse(
+            description=description,
+            tags=tags,
+            detected_items=detected_items
+        )
+
+    except Exception as e:
+        print(f"OpenAI Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
 
 
 class ProcurementOptimizer:
@@ -60,7 +138,6 @@ class ProcurementOptimizer:
                         found = True
                         break
                 if not found:
-                    # If the fixed candidate isn't found in the map, we can't solve.
                     return None
             else:
                 items_to_optimize.append(item)
@@ -135,7 +212,6 @@ class ProcurementOptimizer:
 
         # --- 3. Format Output ---
         if not best_solution["combination"]:
-            # If we couldn't find a solution for the rest, return None
             return None
 
         # Merge optimized results with fixed items
@@ -149,5 +225,3 @@ class ProcurementOptimizer:
             total_cost=total_cost,
             max_delivery_days=max_delivery_days,
         )
-
-# (Keep the __main__ block if you want, or remove it since we have a dedicated validator now)

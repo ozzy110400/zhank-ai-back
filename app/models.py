@@ -3,16 +3,10 @@ from typing import Dict, Optional, List
 from math import isclose
 
 
-class Material(BaseModel):
+class DetectedItem(BaseModel):
     name: str
-    price_per_unit: float
-    units: str
-
-
-class Product(BaseModel):
-    name: str
-    materials: list[Material]
-    total_cost: Optional[float]
+    quantity: int
+    target_material: Optional[str] = None
 
 
 class ImageAnalysisResponse(BaseModel):
@@ -20,20 +14,15 @@ class ImageAnalysisResponse(BaseModel):
     Represents the response from the image analysis service.
     """
     description: str
-    tags: list[str]
-
-
-class DetectedItem(BaseModel):
-    name: str
-    quantity: int
-    target_material: Optional[str] = None
+    tags: List[str]
+    detected_items: List[DetectedItem]  # <--- Added this to pass data to frontend
 
 
 class MarketCandidate(BaseModel):
     name: str
     price: float
     delivery_days: int
-    quality_score: float  # Assuming a score from 0.0 to 1.0
+    quality_score: float
     url: str
     is_selected: bool = False
 
@@ -45,7 +34,6 @@ class UserPreferences(BaseModel):
 
     @model_validator(mode='after')
     def check_weights_sum(self) -> 'UserPreferences':
-        # Ensure weights sum to 1 for clear, interpretable scoring
         total = self.price_weight + self.delivery_weight + self.quality_weight
         if not isclose(total, 1.0):
             raise ValueError("The sum of price, delivery, and quality weights must be 1.0")
@@ -66,7 +54,7 @@ class FinalReport(BaseModel):
     processing_logs: List[str]
 
 
-# --- New Models for Human-in-the-Loop Workflow ---
+# --- Models for Human-in-the-Loop Workflow ---
 
 class NegotiationResponse(BaseModel):
     text_response: str
@@ -80,7 +68,7 @@ class RecalculateRequest(BaseModel):
     candidates_map: Dict[str, List[MarketCandidate]]
     preferences: UserPreferences
     budget: float
-    fixed_items: Dict[str, str]  # Maps item name (e.g., "Office Chair") to a fixed candidate name
+    fixed_items: Dict[str, str]
 
 
 class SearchResponse(BaseModel):
