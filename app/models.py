@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from math import isclose
 
 
@@ -50,3 +50,4 @@ class FinalReport(BaseModel):
     negotiated_solution: Solution
     savings_amount: float
     savings_percentage: float
+    processing_logs: List[str]

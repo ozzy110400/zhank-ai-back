@@ -17,27 +17,28 @@ class NegotiationService:
     Mocks a service that negotiates prices with manufacturers via a Voice LLM.
     """
 
-    def negotiate_price(self, candidate: MarketCandidate) -> float:
+    def negotiate_price(self, candidate: MarketCandidate, logs: List[str]) -> float:
         """
         Simulates a negotiation call for a given market candidate.
 
         Args:
             candidate: The market candidate to negotiate for.
+            logs: A list to append processing logs to.
 
         Returns:
             The potentially new, lower price.
         """
-        print(f"  -> Calling manufacturer for '{candidate.name}' (Current Price: ${candidate.price:.2f})...")
+        logs.append(f"-> Calling manufacturer for '{candidate.name}' (Current Price: ${candidate.price:.2f})...")
 
         # 80% chance of a successful negotiation
         if random.random() > 0.2:
             # Apply a random discount between 5% and 15%
             discount_percentage = random.uniform(0.05, 0.15)
             new_price = candidate.price * (1 - discount_percentage)
-            print(f"     Success! Negotiated a {discount_percentage:.1%} discount. New price: ${new_price:.2f}")
+            logs.append(f"   Success! Negotiated a {discount_percentage:.1%} discount. New price: ${new_price:.2f}")
             return new_price
         else:
-            print("     Failed. The manufacturer did not agree to a discount.")
+            logs.append("   Failed. The manufacturer did not agree to a discount.")
             return candidate.price
 
 
@@ -72,67 +73,71 @@ class ProcurementOrchestrator:
         Returns:
             A FinalReport containing the comparison, or None if no initial solution is found.
         """
+        logs: List[str] = []
+        quantity_map = {item.name: item.quantity for item in detected_items}
+
         # --- Step 1: Find the Initial Optimal Solution ---
-        print("--- Running Initial Optimization ---")
+        logs.append("Running Initial Optimization...")
         initial_solution = self.optimizer.find_constrained_optimal_setup(
             detected_items, candidates_map, preferences, max_total_budget
         )
 
         if not initial_solution:
-            print("Could not find an initial solution within the budget.")
+            logs.append("Could not find an initial solution within the budget.")
+            # Cannot proceed, but can return a partial report if needed. For now, returning None.
             return None
 
-        print(f"Initial solution found with cost: ${initial_solution.total_cost:.2f}")
+        logs.append(f"Initial solution found with cost: ${initial_solution.total_cost:.2f}")
 
         # --- Step 2: Identify High-Value Targets for Negotiation ---
-        print("\n--- Starting Negotiation Phase ---")
+        logs.append("Starting Negotiation Phase...")
         negotiated_candidates_map = copy.deepcopy(candidates_map)
 
-        # Create a lookup for easy updates
-        candidate_lookup: Dict[str, MarketCandidate] = {}
-        for category in negotiated_candidates_map.values():
-            for cand in category:
-                candidate_lookup[cand.name] = cand
+        candidate_lookup: Dict[str, MarketCandidate] = {
+            cand.name: cand
+            for category in negotiated_candidates_map.values()
+            for cand in category
+        }
 
         negotiation_targets = []
         for item_name, selected_candidate in initial_solution.selections.items():
-            item_quantity = next(item.quantity for item in detected_items if item.name == item_name)
+            item_quantity = quantity_map.get(item_name, 1)
             item_total_cost = selected_candidate.price * item_quantity
 
-            # Strategy: Only negotiate for items that are >10% of the total cost
             if item_total_cost / initial_solution.total_cost > 0.10:
                 negotiation_targets.append(selected_candidate)
+                logs.append(f"Identified '{selected_candidate.name}' as a high-value negotiation target.")
 
         if not negotiation_targets:
-            print("No high-value items identified for negotiation. Skipping.")
+            logs.append("No high-value items identified for negotiation. Skipping.")
 
         # --- Step 3: Negotiate Prices ---
         for target in negotiation_targets:
-            new_price = self.negotiator.negotiate_price(target)
-            # Update the price in our copied data structure
+            new_price = self.negotiator.negotiate_price(target, logs)
             if target.name in candidate_lookup:
                 candidate_lookup[target.name].price = new_price
 
         # --- Step 4: Re-run Optimization with Negotiated Prices ---
-        print("\n--- Re-running Optimization with Negotiated Prices ---")
+        logs.append("Re-running Optimization with Negotiated Prices...")
         negotiated_solution = self.optimizer.find_constrained_optimal_setup(
             detected_items, negotiated_candidates_map, preferences, max_total_budget
         )
 
         if not negotiated_solution:
-            print("Could not find a solution after negotiation. This can happen if discounts were minimal.")
-            # Fallback to original solution for the report
+            logs.append("Could not find a solution after negotiation. This can happen if discounts were minimal. Falling back to original solution.")
             negotiated_solution = initial_solution
 
         # --- Step 5: Generate Final Report ---
         savings = initial_solution.total_cost - negotiated_solution.total_cost
         savings_percentage = (savings / initial_solution.total_cost) * 100 if initial_solution.total_cost > 0 else 0
+        logs.append(f"Process complete. Total savings: ${savings:.2f} ({savings_percentage:.2f}%).")
 
         return FinalReport(
             original_solution=initial_solution,
             negotiated_solution=negotiated_solution,
             savings_amount=savings,
             savings_percentage=savings_percentage,
+            processing_logs=logs,
         )
 
 
