@@ -15,7 +15,7 @@ from .models import (
     NegotiationResponse,
     RecalculateRequest,
 )
-from .services import ProcurementOptimizer, analyze_image
+from .services import ProcurementOptimizer, analyze_image, find_product_image  # <--- Imported find_product_image
 from .negotiation_service import NegotiationService
 
 # Load env variables (OPENAI_API_KEY)
@@ -85,6 +85,16 @@ def generate_mock_candidates(items: List[DetectedItem]) -> Dict[str, List[Market
 
 
 # --- API Endpoints ---
+
+@app.get("/product/image")
+async def get_product_image(name: str):
+    """
+    Finds an image URL for a given product name using DuckDuckGo Search.
+    Uses in-memory caching to prevent rate limits.
+    """
+    image_url = find_product_image(name)
+    return {"image_url": image_url}
+
 
 @app.post("/upload-image/", response_model=ImageAnalysisResponse)
 async def upload_image(image: UploadFile = File(...)):

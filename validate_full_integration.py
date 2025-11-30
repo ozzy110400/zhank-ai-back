@@ -3,6 +3,7 @@ import os
 import time
 import json
 import base64
+import webbrowser
 
 # Configuration
 API_URL = "http://127.0.0.1:8000"
@@ -34,6 +35,24 @@ def play_audio_from_base64(b64_string):
             os.system(f"xdg-open {filename}")
     except Exception as e:
         print(f"   ⚠️ Could not play audio automatically: {e}")
+
+
+def test_product_image_retrieval(product_name):
+    """Calls the image endpoint and opens the result in the browser."""
+    print(f"   🔎 Fetching image for product: '{product_name}'...")
+    try:
+        response = requests.get(f"{API_URL}/product/image", params={"name": product_name})
+
+        if response.status_code == 200:
+            image_url = response.json().get("image_url")
+            print(f"   🖼️  Image Found: {image_url}")
+            print(f"   🚀 Opening in browser...")
+            webbrowser.open(image_url)
+        else:
+            print(f"   ❌ Failed to get image. Status: {response.status_code}")
+
+    except Exception as e:
+        print(f"   ⚠️ Error fetching image: {e}")
 
 
 def run_full_validation():
@@ -110,6 +129,10 @@ def run_full_validation():
 
     print(f"   🎯 Target for Negotiation: {selected_candidate['name']}")
     print(f"      Current Price: ${selected_candidate['price']}")
+
+    # --- STEP 2.5: Test Image Retrieval ---
+    print_step(f"2b. Visual Check: Fetching Image for {selected_candidate['name']}")
+    test_product_image_retrieval(selected_candidate["name"])
 
     # --- STEP 3: Negotiation ---
     print_step(f"3. Negotiating for {selected_candidate['name']}")

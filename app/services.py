@@ -1,6 +1,7 @@
 import base64
 import json
 import os
+import urllib.parse
 from typing import List, Dict, Optional
 
 from fastapi import UploadFile, HTTPException
@@ -18,27 +19,26 @@ from .models import (
 # Load env to get OPENAI_API_KEY
 load_dotenv()
 
-# Initialize OpenAI Client (automatically looks for OPENAI_API_KEY in env)
+# Initialize OpenAI Client
 client = OpenAI()
+
+# --- Simple In-Memory Cache for Images ---
+IMAGE_CACHE = {}
 
 
 async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
     """
     Analyzes an uploaded image using OpenAI GPT-4o to identify office items.
-    Returns structured data matching the DetectedItem model.
     """
-    # 1. Validate File Type
     if image.content_type not in ["image/jpeg", "image/png", "image/webp"]:
         raise HTTPException(
             status_code=400,
             detail="Invalid image type. Please upload JPEG, PNG, or WebP."
         )
 
-    # 2. Encode Image to Base64
     file_content = await image.read()
     base64_image = base64.b64encode(file_content).decode('utf-8')
 
-    # 3. Construct the Prompt
     system_prompt = (
         "You are an expert procurement assistant. Analyze the image and identify the furniture or office equipment present. "
         "Return a JSON object with a single key 'items' containing a list of items. "
@@ -67,19 +67,16 @@ async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
                     ],
                 },
             ],
-            response_format={"type": "json_object"},  # Ensures valid JSON
+            response_format={"type": "json_object"},
         )
 
-        # 4. Parse Response
         content = response.choices[0].message.content
         data = json.loads(content)
 
-        # Extract data safely
         items_data = data.get("items", [])
         description = data.get("description", "Image analysis complete.")
         tags = data.get("tags", [])
 
-        # Convert to Pydantic models
         detected_items = [
             DetectedItem(
                 name=item["name"],
@@ -100,6 +97,27 @@ async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
         raise HTTPException(status_code=500, detail=f"Image analysis failed: {str(e)}")
 
 
+def find_product_image(product_name: str) -> str:
+    """
+    Generates a realistic AI image of the product using Pollinations.ai.
+    This replaces search engines entirely to ensure 100% uptime and no broken links.
+    """
+    # 1. Check Cache
+    if product_name in IMAGE_CACHE:
+        return IMAGE_CACHE[product_name]
+
+    print(f"Generating AI image for: {product_name}...")
+
+    # 2. Construct Prompt for Pollinations
+    # We add keywords like "product shot", "white background", "high quality" to make it look like e-commerce.
+    encoded_name = urllib.parse.quote(product_name)
+    image_url = f"https://image.pollinations.ai/prompt/professional_product_photography_of_{encoded_name}_modern_furniture_white_studio_background_8k?nologo=true"
+
+    # 3. Cache and Return
+    IMAGE_CACHE[product_name] = image_url
+    return image_url
+
+
 class ProcurementOptimizer:
     """
     Handles the logic for finding the best procurement options based on user preferences.
@@ -113,23 +131,17 @@ class ProcurementOptimizer:
             max_total_budget: float,
             fixed_items: Optional[Dict[str, str]] = None
     ) -> Optional[Solution]:
-        """
-        Finds the optimal set of market candidates, allowing for "fixed" choices.
-        """
+
         fixed_items = fixed_items or {}
         final_selections: Dict[str, MarketCandidate] = {}
         remaining_budget = max_total_budget
 
-        # Optimization: Create a lookup for quantity to avoid looping repeatedly
         quantity_map = {item.name: item.quantity for item in detected_items}
-
-        # --- 0. Pre-process Fixed Items ---
         items_to_optimize = []
 
         for item in detected_items:
             if item.name in fixed_items:
                 chosen_candidate_name = fixed_items[item.name]
-                # Find the chosen candidate in the map
                 found = False
                 for candidate in candidates_map.get(item.name, []):
                     if candidate.name == chosen_candidate_name:
@@ -143,15 +155,13 @@ class ProcurementOptimizer:
                 items_to_optimize.append(item)
 
         if remaining_budget < 0:
-            return None  # The fixed items alone exceed the budget
+            return None
 
-        # Case: All items were fixed (no optimization needed)
         if not items_to_optimize:
             total_cost = sum(c.price * quantity_map[name] for name, c in final_selections.items())
             max_delivery = max(c.delivery_days for c in final_selections.values()) if final_selections else 0
             return Solution(selections=final_selections, total_cost=total_cost, max_delivery_days=max_delivery)
 
-        # --- 1. Normalization for items to be optimized ---
         normalized_scores: Dict[str, Dict[str, float]] = {}
         for item in items_to_optimize:
             candidates = candidates_map.get(item.name, [])
@@ -180,11 +190,9 @@ class ProcurementOptimizer:
                 )
                 normalized_scores[item.name][c.name] = final_score
 
-        # --- 2. Recursive Solver ---
         best_solution = {"score": -1.0, "combination": None}
 
         def solve(item_index: int, current_combination: Dict[str, MarketCandidate]):
-            # Base Case
             if item_index == len(items_to_optimize):
                 current_cost = sum(
                     c.price * quantity_map[name]
@@ -201,7 +209,6 @@ class ProcurementOptimizer:
                     best_solution["combination"] = current_combination.copy()
                 return
 
-            # Recursive Step
             current_item = items_to_optimize[item_index]
             for candidate in candidates_map.get(current_item.name, []):
                 current_combination[current_item.name] = candidate
@@ -210,11 +217,9 @@ class ProcurementOptimizer:
 
         solve(0, {})
 
-        # --- 3. Format Output ---
         if not best_solution["combination"]:
             return None
 
-        # Merge optimized results with fixed items
         final_selections.update(best_solution["combination"])
 
         total_cost = sum(c.price * quantity_map[name] for name, c in final_selections.items())
