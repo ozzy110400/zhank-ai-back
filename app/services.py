@@ -83,7 +83,7 @@ async def analyze_image(image: UploadFile, user_message: Optional[str] = None) -
         detected_items = [
             DetectedItem(
                 name=item["name"],
-                quantity=item["quantity"],
+                quantity=item["quantity"] if "quantity" in item and item["quantity"] else 1,
                 target_material=item.get("target_material")
             )
             for item in items_data
