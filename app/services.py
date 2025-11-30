@@ -1,6 +1,5 @@
 import base64
 import json
-import os
 import urllib.parse
 from typing import List, Dict, Optional
 
@@ -26,7 +25,7 @@ client = OpenAI()
 IMAGE_CACHE = {}
 
 
-async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
+async def analyze_image(image: UploadFile, user_message: Optional[str] = None) -> ImageAnalysisResponse:
     """
     Analyzes an uploaded image using OpenAI GPT-4o to identify office items.
     """
@@ -49,6 +48,10 @@ async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
         "Also provide a short 'description' of the scene and a list of 'tags'."
     )
 
+    text_prompt = "What items do we need to buy based on this image?"
+    if user_message:
+        text_prompt = f"What items do we need to buy? User notes: {user_message}"
+
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -57,7 +60,7 @@ async def analyze_image(image: UploadFile) -> ImageAnalysisResponse:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "What items do we need to buy based on this image?"},
+                        {"type": "text", "text": text_prompt},
                         {
                             "type": "image_url",
                             "image_url": {

@@ -97,7 +97,7 @@ async def get_product_image(name: str):
 
 
 @app.post("/upload-image/", response_model=ImageAnalysisResponse)
-async def upload_image(image: UploadFile = File(...)):
+async def upload_image(image: UploadFile = File(...), message: Optional[str] = Form(None)):
     """
     Accepts an image file, sends it to OpenAI GPT-4o for analysis,
     and returns a structured list of detected items (name, quantity, material).
@@ -106,7 +106,7 @@ async def upload_image(image: UploadFile = File(...)):
         raise HTTPException(status_code=415, detail="Unsupported file type. Please upload an image.")
 
     # Call the real OpenAI service
-    analysis_result = await analyze_image(image)
+    analysis_result = await analyze_image(image, user_message=message)
     return analysis_result
 
 
